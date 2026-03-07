@@ -1,0 +1,18 @@
+{
+  "name": "claude-financial-planning-report",
+  "version": "1.0.0",
+  "description": "Financial planning PDF and interactive report generator",
+  "main": "src/index.js",
+  "scripts": {
+    "generate": "node src/index.js",
+    "pdf": "node src/index.js --pdf",
+    "interactive": "node src/index.js --interactive",
+    "all": "node src/index.js --all"
+  },
+  "keywords": ["financial", "planning", "report", "pdf"],
+  "license": "MIT",
+  "dependencies": {
+    "pdfkit": "^0.13.0",
+    "chart.js": "^4.4.0"
+  }
+}
