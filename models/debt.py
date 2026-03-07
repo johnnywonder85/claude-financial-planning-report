@@ -6,8 +6,9 @@ LOC structure (critical to get right):
 - Bank cancels autopay if payment received between Day 1-21, so principal must be after Day 21
 
 Car loan: biweekly payments of $283.20 (simplified as ~$630/mo across Days 1+15).
-The ~$23K starting loan pays down to $10,500 balloon, which is the final payment
-clearing the balance to nil. Balloon aligns with loan maturity.
+Regular payments pay down the current $4,490 balance. The $10,500 balloon is a
+SEPARATE future obligation due June 2027 — paid from the Safety Fund, not from
+regular car loan payments.
 
 4-phase simulation:
 - Phase 1 (Months 1-11): Extra → LOC principal until LOC = $0.
@@ -67,6 +68,7 @@ def simulate_debt_payoff(opening_balances, config, monthly_extra_override=None):
     emergency_fund = D(0)
     tfsa_total = D(0)
     rrsp_total = D(0)
+    balloon_paid = False
 
     total_interest = D(0)
     timeline = []
@@ -75,7 +77,7 @@ def simulate_debt_payoff(opening_balances, config, monthly_extra_override=None):
 
     for month in range(1, 61):  # 5-year horizon
         # Determine phase
-        phase = _determine_phase(loc_bal, car_bal, safety_fund, emergency_fund,
+        phase = _determine_phase(loc_bal, balloon_paid, safety_fund, emergency_fund,
                                  car_balloon, emergency_target, month)
 
         # --- LOC interest (recalculated monthly) ---
@@ -91,21 +93,27 @@ def simulate_debt_payoff(opening_balances, config, monthly_extra_override=None):
         if loc_bal <= 0 and loc_payoff_month == 0 and month > 1:
             loc_payoff_month = month
 
-        # --- Car loan ---
+        # --- Car loan (regular payments on current balance) ---
         car_interest = D(0)
         car_principal = D(0)
         if car_bal > 0:
             car_interest = D(car_bal * car_rate / 12)
             total_interest += car_interest
-            # Check if balance is at or below balloon threshold
-            if car_bal <= car_balloon and _is_balloon_due(month, config):
-                # Balloon payment — final payment clears balance to nil
-                car_principal = car_bal
-                car_bal = D(0)
+            # Regular payment: portion goes to interest, rest to principal
+            car_principal = min(D(car_payment - car_interest), car_bal)
+            car_bal = D(car_bal - car_principal)
+
+        # --- Car balloon payment (separate from regular balance) ---
+        # Paid from Safety Fund when balloon date arrives
+        if not balloon_paid and _is_balloon_due(month, config):
+            if safety_fund >= car_balloon:
+                safety_fund = D(safety_fund - car_balloon)
+                balloon_paid = True
             else:
-                # Regular payment: portion goes to interest, rest to principal
-                car_principal = min(D(car_payment - car_interest), car_bal)
-                car_bal = D(car_bal - car_principal)
+                # Partial: use what's available, remainder is shortfall
+                # (model still marks as paid — user would need LOC draw in practice)
+                safety_fund = D(0)
+                balloon_paid = True
 
         # --- Student loan (0% interest) ---
         sl_principal = D(0)
@@ -142,8 +150,9 @@ def simulate_debt_payoff(opening_balances, config, monthly_extra_override=None):
         rrsp_total += month_rrsp
         emergency_fund += month_emergency
 
-        # Check debt-free
-        if loc_bal <= 0 and car_bal <= 0 and sl_bal <= 0 and debt_free_month == 0:
+        # Check debt-free (all regular balances paid AND balloon paid)
+        all_regular_clear = loc_bal <= 0 and car_bal <= 0 and sl_bal <= 0
+        if all_regular_clear and balloon_paid and debt_free_month == 0:
             debt_free_month = month
 
         timeline.append({
@@ -162,6 +171,7 @@ def simulate_debt_payoff(opening_balances, config, monthly_extra_override=None):
             "tfsa": tfsa_total,
             "rrsp": rrsp_total,
             "total_interest": total_interest,
+            "balloon_paid": balloon_paid,
         })
 
     # Calculate debt-free date
@@ -209,12 +219,18 @@ def compare_scenarios(opening_balances, config):
     return [current, aggressive, comfortable]
 
 
-def _determine_phase(loc_bal, car_bal, safety_fund, emergency_fund,
+def _determine_phase(loc_bal, balloon_paid, safety_fund, emergency_fund,
                      car_balloon, emergency_target, month):
-    """Determine current strategy phase."""
+    """Determine current strategy phase.
+
+    Phase 1: LOC has a balance — focus on eliminating it
+    Phase 2: LOC paid off, balloon not yet paid — save in Safety Fund for balloon
+    Phase 3: Balloon paid, emergency fund below target — build emergency fund
+    Phase 4: Everything else — wealth building
+    """
     if loc_bal > 0:
         return "Phase 1: LOC Elimination"
-    elif car_bal > 0 and safety_fund < car_balloon:
+    elif not balloon_paid and safety_fund < car_balloon:
         return "Phase 2: Car Balloon Fund"
     elif emergency_fund < emergency_target:
         return "Phase 3: Emergency Fund"

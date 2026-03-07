@@ -49,6 +49,9 @@ def generate_projection(months, opening_balances, config):
     monthly_tax = D(tax_result.total / 12)
     configured_holdback = D(config.get("holdback_monthly", 2897))
 
+    car_balloon_amount = D(debts["car_loan"].get("balloon_amount", 10500))
+    balloon_paid = False
+
     snapshots = []
     start_date = date.fromisoformat(config.get("start_date", "2026-01-01"))
 
@@ -58,9 +61,9 @@ def generate_projection(months, opening_balances, config):
 
         # Phase determination
         phase = _determine_phase(
-            balances["LOC"], balances["Car Loan"],
+            balances["LOC"], balloon_paid,
             balances["Safety Fund"], balances["Emergency Fund"],
-            D(debts["car_loan"].get("balloon_amount", 10500)),
+            car_balloon_amount,
             D(savings_cfg.get("emergency_target", 18000)),
             m
         )
@@ -88,20 +91,21 @@ def generate_projection(months, opening_balances, config):
             balances["LOC"] = D(balances["LOC"] - loc_principal)
             extra_debt = loc_principal
 
-        # Car Loan
+        # Car Loan (regular payments on current balance)
         car_cfg = debts["car_loan"]
         if balances["Car Loan"] > 0:
             car_interest = D(balances["Car Loan"] * Decimal(str(car_cfg["interest_rate"])) / 12)
             car_payment_amt = D(car_cfg["payment"])
+            principal = min(D(car_payment_amt - car_interest), balances["Car Loan"])
+            debt_payments["Car Payment"] = D(principal + car_interest)
+            balances["Car Loan"] = D(balances["Car Loan"] - principal)
 
-            if balances["Car Loan"] <= D(car_cfg["balloon_amount"]) and _is_balloon_due(m, config):
-                # Balloon: final payment clears to nil
-                debt_payments["Car Balloon"] = balances["Car Loan"]
-                balances["Car Loan"] = D(0)
-            else:
-                principal = min(D(car_payment_amt - car_interest), balances["Car Loan"])
-                debt_payments["Car Payment"] = car_payment_amt
-                balances["Car Loan"] = D(balances["Car Loan"] - principal)
+        # Car balloon — separate obligation, paid from Safety Fund at due date
+        if not balloon_paid and _is_balloon_due(m, config):
+            balloon_draw = min(balances["Safety Fund"], car_balloon_amount)
+            balances["Safety Fund"] = D(balances["Safety Fund"] - balloon_draw)
+            debt_payments["Car Balloon"] = balloon_draw
+            balloon_paid = True
 
         # Student Loan
         sl_cfg = debts["student_loan"]
@@ -188,7 +192,6 @@ def _run_delayed_payment(opening_balances, config):
 
     Shows chequing dip, whether LOC autopay gets missed.
     """
-    # Modify config to delay first month's income
     import copy
     modified_config = copy.deepcopy(config)
 
@@ -199,7 +202,6 @@ def _run_delayed_payment(opening_balances, config):
             balances[key] = D(0)
 
     expenses_cfg = config["expenses"]
-    debts = config["debts"]
 
     # Month 1: no income
     fixed_total = sum(D(e["amount"]) for e in expenses_cfg.get("fixed", []))
