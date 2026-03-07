@@ -1,0 +1,146 @@
+# ============================================================
+# Financial Plan Configuration — All Assumptions in One Place
+# Change a value here → all outputs update. No code edits needed.
+# ============================================================
+
+start_date: "2026-01-01"
+
+# Path to user's Trial Balance file (CSV or Excel)
+trial_balance_file: "trial_balance.csv"
+
+# --- Income ---
+income:
+  gross_monthly: 10000      # $120K / 12
+  payment_day: 21
+
+# --- Tax (2026 Canadian brackets) ---
+tax:
+  federal_brackets:
+    - [57375, 0.14]
+    - [57375, 0.205]
+    - [63563, 0.26]
+    - [75964, 0.29]
+    - [999999999, 0.33]
+  bc_brackets:
+    - [47937, 0.0506]
+    - [47937, 0.077]
+    - [13593, 0.1050]
+    - [23344, 0.1229]
+    - [47938, 0.1470]
+    - [67608, 0.1680]
+    - [999999999, 0.2050]
+  basic_personal_amount: 16129       # Federal BPA 2026
+  bc_basic_personal_amount: 12580    # BC BPA 2026
+  cpp:
+    rate: 0.1190                     # Self-employed: both employee + employer portions
+    max_pensionable: 71300
+    basic_exemption: 3500
+  ei_opted_in: true
+  ei:
+    rate: 0.0229                     # Employee rate (self-employed voluntary)
+    max_insurable: 65700
+  donation_credit_rate: 0.29         # On $106/mo donations
+  donation_monthly: 106
+
+# --- Holdback ---
+holdback_monthly: 2897               # Configurable — model also calculates "correct" for comparison
+
+# --- Fixed Expenses (with amounts and payment days) ---
+expenses:
+  fixed:
+    - { name: "Rent", amount: 1850, day: 1 }
+    - { name: "Student Loan", amount: 440, day: 1 }
+    - { name: "Car Half (1 of 2)", amount: 315, day: 1 }
+    - { name: "Utilities", amount: 120, day: 1 }
+    - { name: "Insurance", amount: 95, day: 1 }
+    - { name: "Pet", amount: 60, day: 1 }
+    - { name: "Donations", amount: 106, day: 1 }
+    - { name: "Groceries", amount: 50, day: 1 }
+    - { name: "Household", amount: 25, day: 1 }
+    - { name: "Laptop", amount: 20, day: 1 }
+    - { name: "Car Half (2 of 2)", amount: 315, day: 15 }
+
+  # Credit card: single statement covers ALL discretionary (no double-counting)
+  credit_card:
+    average_statement: 1750
+    payment_day: 6
+    note: "Covers ALL discretionary: dining, alcohol, clothing, barber, etc."
+
+# --- Debts ---
+debts:
+  loc:
+    balance: 6450               # Opening balance from TB
+    interest_rate: 0.0449
+    autopay_day: 21             # Interest-only autopay (mandatory)
+    voluntary_principal_day: 24
+    target_payment: 700         # Voluntary principal target
+  car_loan:
+    balance: 4490               # Opening balance from TB
+    interest_rate: 0.0449
+    payment: 630                # Monthly on Days 1+15 combined
+    payment_days: [1, 15]
+    balloon_amount: 10500
+    balloon_date: "2027-06-01"  # Due June 2027
+  student_loan:
+    balance: 10500              # Opening balance from TB (due June 2027)
+    interest_rate: 0.0
+    payment: 440
+    payment_day: 1
+
+# --- Savings ---
+savings:
+  safety_fund:
+    target: 500                 # Monthly contribution
+    note: "Maintained throughout all phases"
+  tfsa:
+    monthly: 100                # Maintained throughout
+  emergency_target: 18000       # Phase 3 target
+  phase_a_rrsp: 1200            # Phase 4: RRSP monthly
+  phase_a_tfsa: 625             # Phase 4: TFSA monthly
+
+# --- Strategy Phases (4-phase) ---
+strategy:
+  phases:
+    - name: "Phase 1: LOC Elimination"
+      months: "1-11"
+      description: "Extra → LOC principal until LOC = $0. $500/mo Safety Fund, $100/mo TFSA."
+    - name: "Phase 2: Car Balloon Fund"
+      months: "12-16"
+      description: "Redirect former LOC payments → Safety Fund for balloon. Car balloon $10,500 due June 2027."
+    - name: "Phase 3: Emergency Fund"
+      months: "17-28"
+      description: "Redirect $1,140/mo → emergency fund until $18K target. TFSA $100/mo continues, RRSP $625/mo starts."
+    - name: "Phase 4: Wealth Building"
+      months: "29+"
+      description: "RRSP $1,200/mo + TFSA $625/mo. RRSP refund (~$5,500 at 38.29% marginal) reinvested."
+
+# --- Windfall Rules (decision tree from brief) ---
+windfall_rules:
+  - "If LOC > $0 → apply to LOC principal"
+  - "If LOC = $0 and car balloon unpaid → add to Safety Fund"
+  - "If emergency fund < $18K → add to emergency fund"
+  - "Else → split 60% RRSP / 40% TFSA"
+
+# --- Emergency Scenarios ---
+emergency_scenarios:
+  payment_delayed_1_month:
+    description: "Income arrives Month N+1 instead of N"
+  contract_loss_2_months:
+    description: "Zero income for 2 months"
+  contract_loss_4_months:
+    description: "Zero income for 4 months (worst case)"
+
+# --- Chart of Accounts Mapping ---
+# Maps TB account names to model categories (user reviews after first import)
+coa_mapping:
+  "Business Chequing": { type: "Asset", sub_type: "Cash" }
+  "TFSA": { type: "Asset", sub_type: "Investment", tax_treatment: "TFSA" }
+  "RRSP": { type: "Asset", sub_type: "Investment", tax_treatment: "RRSP" }
+  "Line of Credit": { type: "Liability", sub_type: "Debt" }
+  "Car Loan": { type: "Liability", sub_type: "Debt" }
+  "Student Loan": { type: "Liability", sub_type: "Debt" }
+  "Consulting Revenue": { type: "Revenue", sub_type: "Income" }
+  "Rent Expense": { type: "Expense", sub_type: "Fixed" }
+  "Utilities Expense": { type: "Expense", sub_type: "Fixed" }
+  "Insurance Expense": { type: "Expense", sub_type: "Fixed" }
+  "Credit Card Expense": { type: "Expense", sub_type: "Discretionary" }
